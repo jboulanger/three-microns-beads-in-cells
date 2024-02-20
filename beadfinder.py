@@ -15,6 +15,7 @@ import matplotlib.patches
 from pathlib import Path
 import nd2
 import tifffile
+import yaml
 
 
 def compute_otf(
@@ -540,7 +541,6 @@ def show_beads(img, spacing, beads):
     img: array (D,C,H,W) image to display
     spacing : size in micron
     beads : pandas dataframe with X,Y,R and Fraction_inside
-
     """
 
     ax = plt.gca()
@@ -580,41 +580,96 @@ def bead_control(img, spacing, beads, thickness):
     return create_sphere(img.shape, spacing, d, thickness, centers)
 
 
-def process_row(src_folder: Path, dst_folder: Path, row, crop=None):
-    """Process a row in the filelist"""
-    try:
+class BeadFinder:
+    """Manage files and process"""
 
-        with nd2.ND2File(src_folder / row["name"]) as f:
-            spacing = f.metadata.channels[0].volume.axesCalibration[::-1]
-            spacing[0] = spacing[0] * 0.6
-            array = f.to_dask()
+    def __init__(self, config_path: Path):
+        self.config_path = config_path
+        with open(config_path, "r") as file:
+            config = yaml.safe_load(file)
+        self.source = Path(config["source"])
+        self.destination = Path(config["destination"])
+        print("Source folder accessible?", self.source.exists())
+        if self.destination.exists() is False:
+            print("Creating destination folder.")
+            self.destination.mkdir(parents=True)
+        print("Destination folder accessible?", self.destination.exists())
+        self.scan_source_folder()
 
-            if crop is None:
-                img = array[row["fov"]].compute()
-            else:
-                img = array[row["fov"], :, :, 0:200, 0:200].compute()
+    def scan_source_folder(self):
+        """List all files in the source folder"""
+        files = self.source.glob("*.nd2")
+        filelist = []
+        for filepath in files:
+            with nd2.ND2File(filepath) as f:
+                if f.ndim == 4:
+                    filelist.append(
+                        {"folder": filepath.parent, "name": filepath.name, "fov": 0}
+                    )
+                else:
+                    for k in range(f.shape[0]):
+                        filelist.append(
+                            {"folder": filepath.parent, "name": filepath.name, "fov": k}
+                        )
 
-        cells_df, beads_df, labels = process_img(
-            img, spacing, cell_stitch_threshold=0.1
-        )
+        self.filelist = pd.DataFrame.from_records(filelist)
 
-        cells_df["name"] = row["name"]
+    def process_item(self, row, crop=None):
+        """Process a row in the filelist"""
+        try:
 
-        cells_df.to_csv(
-            dst_folder / row["name"].replace("nd2", f'-{row["fov"]}-cells.csv')
-        )
+            with nd2.ND2File(self.source / row["name"]) as f:
+                spacing = f.metadata.channels[0].volume.axesCalibration[::-1]
+                spacing[0] = spacing[0] * 0.6
+                array = f.to_dask()
 
-        beads_df["fov"] = row["fov"]
-        beads_df.to_csv(
-            dst_folder / row["name"].replace("nd2", f'-{row["fov"]}-beads.csv')
-        )
+                if crop is None:
+                    img = array[row["fov"]].compute()
+                else:
+                    img = array[row["fov"], :, :, 0:200, 0:200].compute()
 
-        tifffile.imwrite(
-            dst_folder / row["name"].replace("nd2", f'-{row["fov"]}-labels.tif'), labels
-        )
+            cells_df, beads_df, labels = process_img(
+                img, spacing, cell_stitch_threshold=0.1
+            )
 
-        return cells_df, beads_df
-    except Exception as e:
-        print("Error on file", row["name"], " position", row["fov"])
-        print(e)
-        return None, None
+            cells_df["name"] = row["name"]
+
+            cname = row["name"].replace("nd2", f'-{row["fov"]}-cells.csv')
+            cells_df.to_csv(self.destination / cname)
+
+            beads_df["fov"] = row["fov"]
+            bname = row["name"].replace("nd2", f'-{row["fov"]}-beads.csv')
+            beads_df.to_csv(self.destination / bname)
+
+            tname = row["name"].replace("nd2", f'-{row["fov"]}-labels.tif')
+            tifffile.imwrite(self.destination / tname, labels)
+
+            return cells_df, beads_df
+
+        except Exception as e:
+            print("Error on file", row["name"], " position", row["fov"])
+            print(e)
+            return None, None
+
+    def process_dataset(self):
+        """Process the entire dataset sequentially"""
+        results = [self.process_row(row) for row in self.filelist.iloc]
+        # concatenate all results in 1 data frame
+        cells = pd.concat([c for c, _ in results[0]])
+        beads = pd.concat([b for _, b in results[0]])
+        return cells, beads
+
+    def process_parallel_dataset(self):
+        """Process the entire dataset sequentially"""
+        import dask
+
+        # create tasks
+        tsk = [dask.delayed(self.process_row)(row) for row in self.filelist.iloc]
+
+        # run the tasks
+        results = dask.compute(tsk)
+
+        # concatenate all results in 1 data frame
+        cells = pd.concat([c for c, _ in results[0]])
+        beads = pd.concat([b for _, b in results[0]])
+        return cells, beads
