@@ -595,6 +595,8 @@ class BeadFinder:
             self.destination.mkdir(parents=True)
         print("Destination folder accessible?", self.destination.exists())
         self.scan_source_folder()
+        nfiles = pd.unique(self.filelist["name"])
+        print(f"Discovered {len(self.filelist)} positions in {nfiles}.")
 
     def scan_source_folder(self):
         """List all files in the source folder"""
@@ -653,7 +655,7 @@ class BeadFinder:
 
     def process_dataset(self):
         """Process the entire dataset sequentially"""
-        results = [self.process_row(row) for row in self.filelist.iloc]
+        results = [self.process_item(row) for row in self.filelist.iloc]
         # concatenate all results in 1 data frame
         cells = pd.concat([c for c, _ in results[0]])
         beads = pd.concat([b for _, b in results[0]])
@@ -664,7 +666,7 @@ class BeadFinder:
         import dask
 
         # create tasks
-        tsk = [dask.delayed(self.process_row)(row) for row in self.filelist.iloc]
+        tsk = [dask.delayed(self.process_item)(row) for row in self.filelist.iloc]
 
         # run the tasks
         results = dask.compute(tsk)
