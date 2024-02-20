@@ -12,6 +12,7 @@ from cellpose import models, core
 import matplotlib.pyplot as plt
 import matplotlib.patches
 
+from pathlib import Path
 import nd2
 import tifffile
 
@@ -502,7 +503,7 @@ def process_img(
     # compute statistics per cells
     tbl_cells = pd.DataFrame(
         {
-            "Label": [c["label"] for c in cell_props],
+            "Label": [int(c["label"]) for c in cell_props],
             "Volume": [c["volume"] for c in cell_props],
             **{
                 f"Mean_intensity_ch{k}": [c["mean intensity"][k] for c in cell_props]
@@ -579,9 +580,10 @@ def bead_control(img, spacing, beads, thickness):
     return create_sphere(img.shape, spacing, d, thickness, centers)
 
 
-def process_row(src_folder, dst_folder, row, crop=None):
+def process_row(src_folder: Path, dst_folder: Path, row, crop=None):
     """Process a row in the filelist"""
     try:
+
         with nd2.ND2File(src_folder / row["name"]) as f:
             spacing = f.metadata.channels[0].volume.axesCalibration[::-1]
             spacing[0] = spacing[0] * 0.6
@@ -597,20 +599,22 @@ def process_row(src_folder, dst_folder, row, crop=None):
         )
 
         cells_df["name"] = row["name"]
+
         cells_df.to_csv(
-            dst_folder / row["name"].with_suffix(f'-{row["fov"]}-cells.csv')
+            dst_folder / row["name"].replace("nd2", f'-{row["fov"]}-cells.csv')
         )
 
         beads_df["fov"] = row["fov"]
         beads_df.to_csv(
-            dst_folder / row["name"].with_suffix(f'-{row["fov"]}-beads.csv')
+            dst_folder / row["name"].replace("nd2", f'-{row["fov"]}-beads.csv')
         )
 
         tifffile.imwrite(
-            dst_folder / row["name"].with_suffix(f'-{row["fov"]}-labels.tif'), labels
+            dst_folder / row["name"].replace("nd2", f'-{row["fov"]}-labels.tif'), labels
         )
 
         return cells_df, beads_df
-    except Exception:
+    except Exception as e:
         print("Error on file", row["name"], " position", row["fov"])
+        print(e)
         return None, None
