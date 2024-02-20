@@ -2,7 +2,7 @@ from typing import List
 
 import math
 import numpy as np
-from scipy.ndimage import white_tophat, maximum_filter, median_filter
+from scipy.ndimage import white_tophat, maximum_filter
 from scipy.special import jn
 
 import pandas as pd
@@ -583,20 +583,30 @@ def bead_control(img, spacing, beads, thickness):
 class BeadFinder:
     """Manage files and process"""
 
-    def __init__(self, config_path: Path):
-        self.config_path = config_path
-        with open(config_path, "r") as file:
-            config = yaml.safe_load(file)
-        self.source = Path(config["source"])
-        self.destination = Path(config["destination"])
+    def __init__(self, config_path: Path = None, src=None, dst=None):
+        if config_path is not None:
+            self.load_config(config_path)
+        else:
+            if src is not None:
+                self.source = src
+            if dst is not None:
+                self.destination = dst
+
         print("Source folder accessible?", self.source.exists())
         if self.destination.exists() is False:
             print("Creating destination folder.")
             self.destination.mkdir(parents=True)
         print("Destination folder accessible?", self.destination.exists())
+
         self.scan_source_folder()
-        nfiles = pd.unique(self.filelist["name"])
+        nfiles = len(pd.unique(self.filelist["name"]))
         print(f"Discovered {len(self.filelist)} positions in {nfiles}.")
+
+    def load_config(self, config_path):
+        with open(config_path, "r") as file:
+            config = yaml.safe_load(file)
+        self.source = Path(config["source"])
+        self.destination = Path(config["destination"])
 
     def scan_source_folder(self):
         """List all files in the source folder"""
@@ -616,19 +626,23 @@ class BeadFinder:
 
         self.filelist = pd.DataFrame.from_records(filelist)
 
-    def process_item(self, row, crop=None):
+    def process_item(self, row, crop=None, usedask=False):
         """Process a row in the filelist"""
         try:
 
             with nd2.ND2File(self.source / row["name"]) as f:
                 spacing = f.metadata.channels[0].volume.axesCalibration[::-1]
                 spacing[0] = spacing[0] * 0.6
-                array = f.to_dask()
-
-                if crop is None:
-                    img = array[row["fov"]].compute()
+                if usedask:
+                    array = f.to_dask(wrapper=False)
+                    if crop is None:
+                        img = array[row["fov"]].compute()
+                    else:
+                        img = array[row["fov"], :, :, :200, :200].compute()
                 else:
-                    img = array[row["fov"], :, :, 0:200, 0:200].compute()
+                    img = f.asarray(row["fov"])
+                    if crop is None:
+                        img = img[:, :, :200, :200]
 
             cells_df, beads_df, labels = process_img(
                 img, spacing, cell_stitch_threshold=0.1
@@ -636,14 +650,14 @@ class BeadFinder:
 
             cells_df["name"] = row["name"]
 
-            cname = row["name"].replace("nd2", f'-{row["fov"]}-cells.csv')
+            cname = row["name"].replace(".nd2", f'-{row["fov"]}-cells.csv')
             cells_df.to_csv(self.destination / cname)
 
             beads_df["fov"] = row["fov"]
-            bname = row["name"].replace("nd2", f'-{row["fov"]}-beads.csv')
+            bname = row["name"].replace(".nd2", f'-{row["fov"]}-beads.csv')
             beads_df.to_csv(self.destination / bname)
 
-            tname = row["name"].replace("nd2", f'-{row["fov"]}-labels.tif')
+            tname = row["name"].replace(".nd2", f'-{row["fov"]}-labels.tif')
             tifffile.imwrite(self.destination / tname, labels)
 
             return cells_df, beads_df
@@ -675,3 +689,19 @@ class BeadFinder:
         cells = pd.concat([c for c, _ in results[0]])
         beads = pd.concat([b for _, b in results[0]])
         return cells, beads
+
+
+def main():
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description="beadfinder")
+    parser.add_argument("--src", help="source folder", required=True)
+    parser.add_argument("--dst", help="destination folder", required=True)
+    args = parser.parse_args()
+    bf = BeadFinder(src=args.src, dst=args.dst)
+    bf.process_dataset()
+
+
+if __name__ == "__main__":
+    main()
