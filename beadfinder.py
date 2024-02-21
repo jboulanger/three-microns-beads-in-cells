@@ -681,7 +681,7 @@ class BeadFinder:
         import dask
 
         # create tasks
-        tsk = [dask.delayed(self.process_item_safe)(row) for row in self.filelist.iloc]
+        tsk = [dask.delayed(self.process_item)(row) for row in self.filelist.iloc]
 
         # run the tasks
         results = dask.compute(tsk)
