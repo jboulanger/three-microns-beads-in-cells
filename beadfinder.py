@@ -600,7 +600,7 @@ class BeadFinder:
 
         self.scan_source_folder()
         nfiles = len(pd.unique(self.filelist["name"]))
-        print(f"Discovered {len(self.filelist)} positions in {nfiles}.")
+        print(f"Discovered {len(self.filelist)} positions in {nfiles} files.")
 
     def load_config(self, config_path):
         with open(config_path, "r") as file:
@@ -626,53 +626,51 @@ class BeadFinder:
 
         self.filelist = pd.DataFrame.from_records(filelist)
 
-    def process_item(self, row, crop=None, usedask=False):
+    def process_item(self, row: pd.DataFrame):
+
+        with nd2.ND2File(self.source / row["name"]) as f:
+            spacing = f.metadata.channels[0].volume.axesCalibration[::-1]
+            spacing[0] = spacing[0] * 0.6
+            # img = f.asarray(row["fov"])
+
+            img = f.to_dask(False)
+            img = img[row["fov"], :, :, :200, :200].compute()
+
+        cells_df, beads_df, labels = process_img(
+            img, spacing, cell_stitch_threshold=0.1
+        )
+
+        cells_df["name"] = row["name"]
+
+        cname = row["name"].replace(".nd2", f'-{row["fov"]}-cells.csv')
+        cells_df.to_csv(self.destination / cname)
+
+        beads_df["fov"] = row["fov"]
+        bname = row["name"].replace(".nd2", f'-{row["fov"]}-beads.csv')
+        beads_df.to_csv(self.destination / bname)
+
+        tname = row["name"].replace(".nd2", f'-{row["fov"]}-labels.tif')
+        tifffile.imwrite(self.destination / tname, labels)
+
+        return cells_df, beads_df
+
+    def process_item_safe(self, row):
         """Process a row in the filelist"""
         try:
-
-            with nd2.ND2File(self.source / row["name"]) as f:
-                spacing = f.metadata.channels[0].volume.axesCalibration[::-1]
-                spacing[0] = spacing[0] * 0.6
-                if usedask:
-                    array = f.to_dask(wrapper=False)
-                    if crop is None:
-                        img = array[row["fov"]].compute()
-                    else:
-                        img = array[row["fov"], :, :, :200, :200].compute()
-                else:
-                    img = f.asarray(row["fov"])
-                    if crop is None:
-                        img = img[:, :, :200, :200]
-
-            cells_df, beads_df, labels = process_img(
-                img, spacing, cell_stitch_threshold=0.1
-            )
-
-            cells_df["name"] = row["name"]
-
-            cname = row["name"].replace(".nd2", f'-{row["fov"]}-cells.csv')
-            cells_df.to_csv(self.destination / cname)
-
-            beads_df["fov"] = row["fov"]
-            bname = row["name"].replace(".nd2", f'-{row["fov"]}-beads.csv')
-            beads_df.to_csv(self.destination / bname)
-
-            tname = row["name"].replace(".nd2", f'-{row["fov"]}-labels.tif')
-            tifffile.imwrite(self.destination / tname, labels)
-
-            return cells_df, beads_df
-
+            cells_df, beads_df = self.process_item(row)
         except Exception as e:
             print("Error on file", row["name"], " position", row["fov"])
             print(e)
             return None, None
+        return cells_df, beads_df
 
     def process_dataset(self):
         """Process the entire dataset sequentially"""
         results = [self.process_item(row) for row in self.filelist.iloc]
+        return results
         # concatenate all results in 1 data frame
-        cells = pd.concat([c for c, _ in results[0]])
-        beads = pd.concat([b for _, b in results[0]])
+        cells = pd.concat([c for c, _ in results])
+        beads = pd.concat([b for _, b in results])
         return cells, beads
 
     def process_parallel_dataset(self):
@@ -680,7 +678,7 @@ class BeadFinder:
         import dask
 
         # create tasks
-        tsk = [dask.delayed(self.process_item)(row) for row in self.filelist.iloc]
+        tsk = [dask.delayed(self.process_item_safe)(row) for row in self.filelist.iloc]
 
         # run the tasks
         results = dask.compute(tsk)
