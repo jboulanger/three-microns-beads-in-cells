@@ -747,6 +747,7 @@ class Cluster:
             )
         self.cluster.adapt(maximum_jobs=self.max_jobs)
         self.client = Client(self.cluster)
+        print(self.client)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cluster.scale(0)
