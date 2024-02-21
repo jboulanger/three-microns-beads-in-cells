@@ -358,6 +358,7 @@ def detect_spheres(
 
     # find local maximas positions
     footprint = [diameter / n for n in spacing]
+    print(footprint, xc.shape)
     zyx = np.argwhere(
         np.logical_and(xc > xc.max() * threshold, xc == maximum_filter(xc, footprint))
     ).astype(float)
@@ -407,6 +408,7 @@ def labelprops(labels, intensity, spacing):
 def process_img(
     img,
     spacing,
+    model=None,
     cell_diameter=100,
     cell_cytosolic_channel=1,
     cell_nuclear_channel=3,
@@ -443,7 +445,9 @@ def process_img(
     """
 
     # segment the cells
-    model = models.Cellpose(gpu=core.use_gpu(), model_type="cyto2")
+    if model is None:
+        model = models.Cellpose(gpu=core.use_gpu(), model_type="cyto2")
+
     # median_filter(img[:, cell_cytosolic_channel], [3, 3, 3]),
     img_preprocessed = np.stack(
         (
@@ -586,7 +590,7 @@ def bead_control(img, spacing, beads, thickness):
 class BeadFinder:
     """Manage files and process"""
 
-    def __init__(self, config_path: Path = None, src=None, dst=None):
+    def __init__(self, config_path: Path = None, src=None, dst=None, crop=False):
         if config_path is not None:
             self.load_config(config_path)
         else:
@@ -604,6 +608,9 @@ class BeadFinder:
         self.scan_source_folder()
         nfiles = len(pd.unique(self.filelist["name"]))
         print(f"Discovered {len(self.filelist)} positions in {nfiles} files.")
+
+        self.cellpose_model = models.Cellpose(gpu=core.use_gpu(), model_type="cyto2")
+        self.crop = crop
 
     def load_config(self, config_path):
         with open(config_path, "r") as file:
@@ -631,15 +638,10 @@ class BeadFinder:
 
     def process_item(self, row: pd.DataFrame):
 
-        with nd2.ND2File(self.source / row["name"]) as f:
-            spacing = f.metadata.channels[0].volume.axesCalibration[::-1]
-            spacing[0] = spacing[0] * 0.6
-            img = f.asarray(row["fov"])
-            # img = f.to_dask(False)
-            # img = img[row["fov"], :, :, :200, :200].compute()
+        img, spacing = self.load_image(row)
 
         cells_df, beads_df, labels = process_img(
-            img, spacing, cell_stitch_threshold=0.1
+            img, spacing, model=self.cellpose_model, cell_stitch_threshold=0.1
         )
 
         cells_df["name"] = row["name"]
@@ -659,17 +661,17 @@ class BeadFinder:
     def process_item_safe(self, row):
         """Process a row in the filelist"""
         try:
-            cells_df, beads_df = self.process_item(row)
+            return self.process_item(row)
         except Exception as e:
             print("Error on file", row["name"], " position", row["fov"])
             print(e)
             return None, None
-        return cells_df, beads_df
 
     def process_dataset(self):
         """Process the entire dataset sequentially"""
+
         results = [self.process_item(row) for row in self.filelist.iloc]
-        return results
+
         # concatenate all results in 1 data frame
         cells = pd.concat([c for c, _ in results])
         beads = pd.concat([b for _, b in results])
@@ -690,12 +692,33 @@ class BeadFinder:
         beads = pd.concat([b for _, b in results[0]])
         return cells, beads
 
+    def get_item(self, index):
+        return self.filelist.iloc[index]
+
+    def load_labels(self, row):
+        tname = row["name"].replace(".nd2", f'-{row["fov"]}-labels.tif')
+        return tifffile.imread(self.destination / tname)
+
+    def load_image(self, row):
+        with nd2.ND2File(self.source / row["name"]) as f:
+            spacing = f.metadata.channels[0].volume.axesCalibration[::-1]
+            spacing[0] = spacing[0] * 0.6
+            img = f.asarray(row["fov"]).squeeze()
+            if crop:
+                img = img[:, :, :200, :200]
+        return img, spacing
+
+    def load_beads_dataframe(self, row):
+        bname = row["name"].replace(".nd2", f'-{row["fov"]}-beads.csv')
+        return pd.read_csv(bname)
+
 
 class Cluster:
     """Manage cluster connection and client"""
 
-    def __init__(self, profile):
+    def __init__(self, profile, max_jobs=30):
         self.profile = profile
+        self.max_jobs = max_jobs
 
     def __enter__(self):
         if self.profile == "gpu":
@@ -722,11 +745,12 @@ class Cluster:
                 death_timeout=150,
                 job_extra_directives=["--gres=gpu:4"],
             )
+        self.cluster.adapt(maximum_jobs=self.max_jobs)
         self.client = Client(self.cluster)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        cluster.scale(0)
-        client.shutdown()
+        self.cluster.scale(0)
+        self.client.shutdown()
 
 
 def main():
