@@ -703,7 +703,7 @@ class BeadFinder:
             spacing = f.metadata.channels[0].volume.axesCalibration[::-1]
             spacing[0] = spacing[0] * 0.6
             img = f.asarray(row["fov"]).squeeze()
-            if crop:
+            if self.crop:
                 img = img[:, :, :200, :200]
         return img, spacing
 
@@ -715,7 +715,7 @@ class BeadFinder:
 class Cluster:
     """Manage cluster connection and client"""
 
-    def __init__(self, profile, max_jobs=30):
+    def __init__(self, profile, max_jobs=10):
         self.profile = profile
         self.max_jobs = max_jobs
 
@@ -745,7 +745,6 @@ class Cluster:
             )
         self.cluster.adapt(maximum_jobs=self.max_jobs)
         self.client = Client(self.cluster)
-        print(self.cluster)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cluster.scale(0)
