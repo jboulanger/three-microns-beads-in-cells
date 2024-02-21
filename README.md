@@ -6,7 +6,9 @@ Large 3 microns beads are detected using normalized cross correlation.
 ## Content
 This repository contains a python source code and several notebooks
 - beadfinder.py : code implementing bead detection and cell segmentation using cellpose
-- Bead Detections.py: jupyter notebook for processing files in a folder
+- Bead detections.py: jupyter notebook for processing files in a folder
+- Bead detections hpc.py: jupyter notebook for processing files in a folder on a HPC system
+
 
 ## System requirement
 
@@ -21,7 +23,7 @@ micromamba -qy create -f environment.yml
 # activate the environment 
 micromamba activate puroanalysis
 # start the notebook
-jupyter lab "Bead Detections.csv"
+jupyter lab "Bead detections.csv"
 ```
 
 To process data faster access to a HPC cluster can accelerate the processing.
@@ -34,3 +36,4 @@ git clone https://github.com/jboulanger/three-microns-beads-in-cells.git
 ```
 
 ## Demo
+

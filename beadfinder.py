@@ -598,6 +598,8 @@ class BeadFinder:
                 self.source = src
             if dst is not None:
                 self.destination = dst
+            else:
+                self.destination = self.source
 
         print("Source folder accessible?", self.source.exists())
         if self.destination.exists() is False:
@@ -622,6 +624,7 @@ class BeadFinder:
         files = self.source.glob("*.nd2")
         filelist = []
         for filepath in files:
+            print(filepath.name)
             with nd2.ND2File(filepath) as f:
                 if f.ndim == 4:
                     filelist.append(
@@ -644,11 +647,12 @@ class BeadFinder:
         )
 
         cells_df["name"] = row["name"]
-
+        cells_df["fov"] = row["fov"]
         cname = row["name"].replace(".nd2", f'-{row["fov"]}-cells.csv')
         cells_df.to_csv(self.destination / cname)
 
         beads_df["fov"] = row["fov"]
+        beads_df["name"] = row["name"]
         bname = row["name"].replace(".nd2", f'-{row["fov"]}-beads.csv')
         beads_df.to_csv(self.destination / bname)
 
@@ -709,7 +713,17 @@ class BeadFinder:
 
     def load_beads_dataframe(self, row):
         bname = row["name"].replace(".nd2", f'-{row["fov"]}-beads.csv')
-        return pd.read_csv(bname)
+        f = self.destination / bname
+        if f.exists():
+            df = pd.read_csv(self.destination / bname)
+            df["name"] = row["name"]
+            df["fov"] = row["fov"]
+            return df
+        else:
+            return None
+
+    def load_all_beads_dataframe(self):
+        return pd.concat([self.load_beads_dataframe(row) for row in self.filelist.iloc])
 
 
 class Cluster:
@@ -734,7 +748,7 @@ class Cluster:
             )
         else:
             self.cluster = SLURMCluster(
-                cores=64,
+                cores=112,
                 memory="32GB",
                 queue="cpu",
                 processes=1,
@@ -757,10 +771,12 @@ def main():
 
     parser = argparse.ArgumentParser(description="beadfinder")
     parser.add_argument("--src", help="source folder", required=True)
-    parser.add_argument("--dst", help="destination folder", required=True)
+    parser.add_argument("--dst", help="destination folder", default=None)
+
     args = parser.parse_args()
     bf = BeadFinder(src=args.src, dst=args.dst)
-    bf.process_dataset()
+    with Cluster("cpu", 10):
+        bf.process_parallel_dataset()
 
 
 if __name__ == "__main__":
