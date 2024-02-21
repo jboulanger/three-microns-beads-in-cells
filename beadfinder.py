@@ -737,17 +737,16 @@ class Cluster:
             self.cluster = SLURMCluster(
                 cores=64,
                 memory="32GB",
-                queue="gpu",
+                queue="cpu",
                 processes=1,
                 local_directory="$SLURM_SCRATCH_DIR",
                 shebang="#!/usr/bin/env tcsh",
                 walltime="10:00:00",
                 death_timeout=150,
-                job_extra_directives=["--gres=gpu:4"],
             )
         self.cluster.adapt(maximum_jobs=self.max_jobs)
         self.client = Client(self.cluster)
-        print(self.client)
+        print(self.cluster)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cluster.scale(0)
