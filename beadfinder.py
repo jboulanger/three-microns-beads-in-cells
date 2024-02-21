@@ -17,6 +17,9 @@ import nd2
 import tifffile
 import yaml
 
+from dask_jobqueue import SLURMCluster
+from dask.distributed import Client
+
 
 def compute_otf(
     shape: List[int],
@@ -631,10 +634,9 @@ class BeadFinder:
         with nd2.ND2File(self.source / row["name"]) as f:
             spacing = f.metadata.channels[0].volume.axesCalibration[::-1]
             spacing[0] = spacing[0] * 0.6
-            # img = f.asarray(row["fov"])
-
-            img = f.to_dask(False)
-            img = img[row["fov"], :, :, :200, :200].compute()
+            img = f.asarray(row["fov"])
+            # img = f.to_dask(False)
+            # img = img[row["fov"], :, :, :200, :200].compute()
 
         cells_df, beads_df, labels = process_img(
             img, spacing, cell_stitch_threshold=0.1
@@ -687,6 +689,44 @@ class BeadFinder:
         cells = pd.concat([c for c, _ in results[0]])
         beads = pd.concat([b for _, b in results[0]])
         return cells, beads
+
+
+class Cluster:
+    """Manage cluster connection and client"""
+
+    def __init__(self, profile):
+        self.profile = profile
+
+    def __enter__(self):
+        if self.profile == "gpu":
+            self.cluster = SLURMCluster(
+                cores=64,
+                memory="32GB",
+                queue="gpu",
+                processes=1,
+                local_directory="$SLURM_SCRATCH_DIR",
+                shebang="#!/usr/bin/env tcsh",
+                walltime="10:00:00",
+                death_timeout=150,
+                job_extra_directives=["--gres=gpu:4"],
+            )
+        else:
+            self.cluster = SLURMCluster(
+                cores=64,
+                memory="32GB",
+                queue="gpu",
+                processes=1,
+                local_directory="$SLURM_SCRATCH_DIR",
+                shebang="#!/usr/bin/env tcsh",
+                walltime="10:00:00",
+                death_timeout=150,
+                job_extra_directives=["--gres=gpu:4"],
+            )
+        self.client = Client(self.cluster)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        cluster.scale(0)
+        client.shutdown()
 
 
 def main():
