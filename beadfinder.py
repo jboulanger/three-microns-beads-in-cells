@@ -608,8 +608,7 @@ class BeadFinder:
         self.scan_source_folder()
         nfiles = len(pd.unique(self.filelist["name"]))
         print(f"Discovered {len(self.filelist)} positions in {nfiles} files.")
-
-        self.cellpose_model = models.Cellpose(gpu=core.use_gpu(), model_type="cyto2")
+        self.model = None
         self.crop = crop
 
     def load_config(self, config_path):
@@ -641,7 +640,7 @@ class BeadFinder:
         img, spacing = self.load_image(row)
 
         cells_df, beads_df, labels = process_img(
-            img, spacing, model=self.cellpose_model, cell_stitch_threshold=0.1
+            img, spacing, cell_stitch_threshold=0.1
         )
 
         cells_df["name"] = row["name"]
