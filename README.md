@@ -8,7 +8,7 @@ This repository contains a python source code and several notebooks
 - beadfinder.py : code implementing bead detection and cell segmentation using cellpose
 - Bead detections.py: jupyter notebook for processing files in a folder
 - Bead detections hpc.py: jupyter notebook for processing files in a folder on a HPC system
-
+- 
 
 ## System requirement
 
@@ -36,4 +36,13 @@ git clone https://github.com/jboulanger/three-microns-beads-in-cells.git
 ```
 
 ## Demo
+
+## Usage
+Navigate to the code folder and launch a notebook from there.
+```bash
+cd three-microns-beads-in-cells
+jupyter lab --no-browser --ip=0.0.0.0
+```
+Connect to the notebook server from visual code using the link and 
+
 

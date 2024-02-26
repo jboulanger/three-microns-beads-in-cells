@@ -587,10 +587,22 @@ def bead_control(img, spacing, beads, thickness):
     return create_sphere(img.shape, spacing, d, thickness, centers)
 
 
-class BeadFinder:
+class FolderProcessor:
     """Manage files and process"""
 
     def __init__(self, config_path: Path = None, src=None, dst=None, crop=False):
+        """
+        Configure the processing of files using either a config file
+        or a src and destination folders.
+        config_path: Path
+            path to the yml config file
+        src: Path
+            path to the source folder
+        dst: Path
+            path to the destination folder
+        crop: Bool
+            Optional crop for testing
+        """
         if config_path is not None:
             self.load_config(config_path)
         else:
@@ -620,7 +632,9 @@ class BeadFinder:
         self.destination = Path(config["destination"])
 
     def scan_source_folder(self):
-        """List all files in the source folder"""
+        """List all files in the source folder
+        TODO:This should be done once and saved in a file.
+        """
         files = self.source.glob("*.nd2")
         filelist = []
         for filepath in files:
@@ -774,7 +788,7 @@ def main():
     parser.add_argument("--dst", help="destination folder", default=None)
 
     args = parser.parse_args()
-    bf = BeadFinder(src=args.src, dst=args.dst)
+    bf = FolderProcessor(src=args.src, dst=args.dst)
     with Cluster("cpu", 10):
         bf.process_parallel_dataset()
 
