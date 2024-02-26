@@ -445,8 +445,7 @@ def process_img(
     """
 
     # segment the cells
-    if model is None:
-        model = models.Cellpose(gpu=core.use_gpu(), model_type="cyto2")
+    model = models.Cellpose(gpu=False, model_type="cyto2")
 
     # median_filter(img[:, cell_cytosolic_channel], [3, 3, 3]),
     img_preprocessed = np.stack(
@@ -622,7 +621,6 @@ class FolderProcessor:
         self.scan_source_folder()
         nfiles = len(pd.unique(self.filelist["name"]))
         print(f"Discovered {len(self.filelist)} positions in {nfiles} files.")
-        self.model = None
         self.crop = crop
 
     def load_config(self, config_path):

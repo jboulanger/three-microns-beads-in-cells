@@ -4,18 +4,16 @@ channels:
   - nvidia
   - conda-forge
 dependencies:
-  - python=3.9
-  - pip
+  - conda-forge::python=3.9
   - conda-forge::jupyterlab
   - pytorch::pytorch
   - pytorch::torchvision
-  - matplotlib
-  - pandas
+  - conda-forge::matplotlib
+  - conda-forge::pandas
   - conda-forge::scikit-image
   - conda-forge::seaborn
   - conda-forge::dask
   - conda-forge::dask-jobqueue
-  - pyyaml
-  - pip:
-      - nd2
-      - cellpose
+  - conda-forge::pyyaml
+  - conda-forge::nd2
+  - conda-forge::cellpose
