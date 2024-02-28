@@ -408,7 +408,6 @@ def labelprops(labels, intensity, spacing):
 def process_img(
     img,
     spacing,
-    model=None,
     cell_diameter=100,
     cell_cytosolic_channel=1,
     cell_nuclear_channel=3,
@@ -611,8 +610,9 @@ class FolderProcessor:
                 self.destination = dst
             else:
                 self.destination = self.source
-
-        print("Source folder accessible?", self.source.exists())
+        print("Source folder", self.source)
+        print("Source folder accessible ?", self.source.exists())
+        print("Destination folder", self.destination)
         if self.destination.exists() is False:
             print("Creating destination folder.")
             self.destination.mkdir(parents=True)
@@ -754,7 +754,7 @@ class Cluster:
                 processes=1,
                 local_directory="$SLURM_SCRATCH_DIR",
                 shebang="#!/usr/bin/env tcsh",
-                walltime="10:00:00",
+                walltime="72:00:00",
                 death_timeout=150,
                 job_extra_directives=["--gres=gpu:4"],
             )
@@ -766,7 +766,7 @@ class Cluster:
                 processes=1,
                 local_directory="$SLURM_SCRATCH_DIR",
                 shebang="#!/usr/bin/env tcsh",
-                walltime="10:00:00",
+                walltime="72:00:00",
                 death_timeout=150,
             )
         self.cluster.adapt(maximum_jobs=self.max_jobs)
